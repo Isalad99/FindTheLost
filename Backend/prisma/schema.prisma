@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// สิทธิ์ผู้ใช้งาน
+enum Role {
+  USER
+  ADMIN
+}
+
+// ประเภทสิ่งที่หาย (คน, สัตว์เลี้ยง, สิ่งของ)
+enum Category {
+  PERSON
+  PET
+  ITEM
+}
+
+// สถานะการตามหา
+enum ReportStatus {
+  LOST  // กำลังตามหา
+  FOUND // พบแล้ว (ปิดเคส)
+}
+
+// ตารางผู้ใช้งาน (สำหรับ Login / Register)
+model User {
+  id        Int          @id @default(autoincrement())
+  email     String       @unique
+  password  String       // เก็บรหัสผ่านที่แฮชแล้ว (เช่น bcrypt)
+  name      String       // ชื่อผู้ใช้งาน
+  tel       String?      // เบอร์โทรศัพท์ของผู้ใช้
+  role      Role         @default(USER)
+
+  reports   LostReport[] // ประวัติโพสต์แจ้งหายที่ตนเองเป็นคนสร้าง
+  clues     Clue[]       // ประวัติเบาะแสที่ตนเองเคยไปแจ้งไว้ (ระบบ History)
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+// ตารางแจ้งหาย (คน, สัตว์, สิ่งของ)
+model LostReport {
+  id               Int          @id @default(autoincrement())
+  title            String       // ชื่อสิ่งที่หาย / คนหาย / สัตว์เลี้ยงหาย
+  category         Category     // ประเภทสิ่งที่หาย (PERSON, PET, ITEM)
+  lostDate         DateTime     // วันที่และเวลาที่หาย
+  description      String       // รายละเอียด (ลักษณะเด่น, จุดสังเกต)
+  lastSeenLocation String       // สถานที่พบเห็นล่าสุด
+  contactTel       String       // เบอร์โทรติดต่อกลับ (สำหรับเคสนี้)
+  imageUrl         String?      // ลิงก์รูปภาพ (URL จากเน็ต หรือ Supabase Storage)
+  status           ReportStatus @default(LOST) // สถานะเคส (ตามหาอยู่ หรือ พบแล้ว)
+
+  // เชื่อมไปยังผู้แจ้งหาย (Foreign Key)
+  userId           Int
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // รายการเบาะแสของเคสนี้
+  clues            Clue[]
+
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+// ตารางแจ้งเบาะแส (Comment / Clue)
+model Clue {
+  id        Int        @id @default(autoincrement())
+  message   String     // ข้อความแจ้งเบาะแส
+  imageUrl  String?    // ลิงก์รูปถ่ายเบาะแสหรือจุดที่พบเห็น (ถ้ามี)
+  location  String?    // สถานที่ที่พบเบาะแส (ถ้ามี)
+
+  // แจ้งให้กับเคสไหน
+  reportId  Int
+  report    LostReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  // ใครเป็นคนส่งเบาะแส (เพื่อใช้ในระบบ History: ดูว่าตัวเองแจ้งเบาะแสอะไรไปบ้าง)
+  userId    Int
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime   @default(now())
+}

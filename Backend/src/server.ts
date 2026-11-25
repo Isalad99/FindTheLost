@@ -1,0 +1,402 @@
+import express, { type Request, type Response } from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { prisma } from "./lib/prisma.js";
+import { Category, ReportStatus } from "@prisma/client";
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors()); 
+app.use(express.json());
+
+// 1. Health Check Endpoint
+app.get("/", (_req: Request, res: Response) => {
+  res.json({
+    message: "FindTheLost API Server running!",
+    endpoints: {
+      reports: "/api/reports",
+      clues: "/api/clues",
+      auth: "/api/auth",
+      users: "/api/users",
+    },
+  });
+});
+
+// 2. Lost Reports
+
+// 2.1 ดึงรายการแจ้งหายทั้งหมด (รองรับ Filter: category, status, search)
+app.get("/api/reports", async (req: Request, res: Response) => {
+  try {
+    const { category, status, search } = req.query;
+
+    const whereCondition: any = {};
+
+    // กรองตามประเภท (PERSON, PET, ITEM)
+    if (category && typeof category === "string") {
+      whereCondition.category = category.toUpperCase() as Category;
+    }
+
+    // กรองตามสถานะ (LOST, FOUND)
+    if (status && typeof status === "string") {
+      whereCondition.status = status.toUpperCase() as ReportStatus;
+    }
+
+    // ค้นหาตามคำ (ค้นจากชื่อ, รายละเอียด, หรือสถานที่)
+    if (search && typeof search === "string") {
+      whereCondition.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { lastSeenLocation: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const reports = await prisma.lostReport.findMany({
+      where: whereCondition,
+      include: {
+        user: {
+          select: { id: true, name: true, tel: true },
+        },
+        _count: {
+          select: { clues: true }, // นับจำนวนเบาะแสทั้งหมดของเคสนี้
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ success: true, count: reports.length, data: reports });
+  } catch (error) {
+    console.error("Error fetching reports:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการดึงข้อมูล" });
+  }
+});
+
+// 2.2 ดึงรายละเอียดของรายการแจ้งหายตาม ID (รวมเบาะแสทั้งหมด)
+app.get("/api/reports/:id", async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ success: false, message: "ID ไม่ถูกต้อง" });
+    }
+
+    const report = await prisma.lostReport.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, tel: true },
+        },
+        clues: {
+          include: {
+            user: {
+              select: { id: true, name: true },
+            },
+          },
+          orderBy: { createdAt: "desc" }, // เบาะแสล่าสุดขึ้นก่อน
+        },
+      },
+    });
+
+    if (!report) {
+      return res.status(404).json({ success: false, message: "ไม่พบข้อมูลที่ระบุ" });
+    }
+
+    res.json({ success: true, data: report });
+  } catch (error) {
+    console.error("Error fetching report detail:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการดึงข้อมูล" });
+  }
+});
+
+// 2.3 สร้างโพสต์แจ้งหายใหม่
+app.post("/api/reports", async (req: Request, res: Response) => {
+  try {
+    const {
+      title,
+      category,
+      lostDate,
+      description,
+      lastSeenLocation,
+      contactTel,
+      imageUrl,
+      userId,
+    } = req.body;
+
+    // ตรวจสอบความถูกต้องของข้อมูลเบื้องต้น
+    if (!title || !category || !lostDate || !description || !lastSeenLocation || !contactTel || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (title, category, lostDate, description, lastSeenLocation, contactTel, userId)",
+      });
+    }
+
+    const newReport = await prisma.lostReport.create({
+      data: {
+        title,
+        category: category.toUpperCase() as Category,
+        lostDate: new Date(lostDate),
+        description,
+        lastSeenLocation,
+        contactTel,
+        imageUrl: imageUrl || null,
+        userId: Number(userId),
+        status: ReportStatus.LOST,
+      },
+      include: {
+        user: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "สร้างรายการแจ้งหายเรียบร้อยแล้ว",
+      data: newReport,
+    });
+  } catch (error) {
+    console.error("Error creating report:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการสร้างรายการ" });
+  }
+});
+
+// 2.4 อัปเดตสถานะ (เช่น LOST -> FOUND พบแล้ว หรือปิดเคส)
+app.patch("/api/reports/:id/status", async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { status } = req.body;
+
+    if (!status || !Object.values(ReportStatus).includes(status.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: "สถานะไม่ถูกต้อง (ต้องเป็น LOST หรือ FOUND)",
+      });
+    }
+
+    const updated = await prisma.lostReport.update({
+      where: { id },
+      data: { status: status.toUpperCase() as ReportStatus },
+    });
+
+    res.json({
+      success: true,
+      message: "อัปเดตสถานะเรียบร้อยแล้ว",
+      data: updated,
+    });
+  } catch (error) {
+    console.error("Error updating status:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
+  }
+});
+
+// 3. หมวด: แจ้งเบาะแส (Clues / Tips)
+
+// 3.1 ส่งข้อมูลเบาะแสใหม่ให้กับเคส
+app.post("/api/clues", async (req: Request, res: Response) => {
+  try {
+    const { message, imageUrl, location, reportId, userId } = req.body;
+
+    if (!message || !reportId || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณาระบุข้อความเบาะแส (message), reportId, และ userId",
+      });
+    }
+
+    const newClue = await prisma.clue.create({
+      data: {
+        message,
+        imageUrl: imageUrl || null,
+        location: location || null,
+        reportId: Number(reportId),
+        userId: Number(userId),
+      },
+      include: {
+        user: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "ส่งข้อมูลเบาะแสเรียบร้อยแล้ว",
+      data: newClue,
+    });
+  } catch (error) {
+    console.error("Error creating clue:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการบันทึกเบาะแส" });
+  }
+});
+
+// 4. หมวด: ระบบประวัติ (History)
+
+// 4.1 ดูประวัติของ User: เบาะแสที่ตัวเองเคยแจ้ง + รายการที่ตัวเองเคยแจ้งหาย
+app.get("/api/users/:userId/history", async (req: Request, res: Response) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (isNaN(userId)) {
+      return res.status(400).json({ success: false, message: "User ID ไม่ถูกต้อง" });
+    }
+
+    // 1. เบาะแสที่ user คนนี้เคยไปแจ้งไว้
+    const myClues = await prisma.clue.findMany({
+      where: { userId },
+      include: {
+        report: {
+          select: {
+            id: true,
+            title: true,
+            category: true,
+            status: true,
+            imageUrl: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // 2. โพสต์แจ้งหายที่ user คนนี้เป็นคนสร้าง
+    const myReports = await prisma.lostReport.findMany({
+      where: { userId },
+      include: {
+        _count: { select: { clues: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        cluesHistory: myClues,
+        reportsHistory: myReports,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching user history:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการดึงข้อมูลประวัติ" });
+  }
+});
+
+// 5. หมวด: ระบบผู้ใช้และการยืนยันตัวตน (Auth / Users)
+
+// 5.1 สมัครสมาชิก (Register)
+app.post("/api/auth/register", async (req: Request, res: Response) => {
+  try {
+    const { email, password, name, tel } = req.body;
+
+    if (!email || !password || !name) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอก email, password และ name",
+      });
+    }
+
+    // ตรวจสอบว่า email ซ้ำหรือไม่
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: "อีเมลนี้มีผู้ใช้งานแล้ว" });
+    }
+
+    const newUser = await prisma.user.create({
+      data: {
+        email,
+        password, // สามารถใช้ bcrypt.hash(password, 10) เพิ่มเติมได้
+        name,
+        tel: tel || null,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        tel: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "ลงทะเบียนสำเร็จ",
+      data: newUser,
+    });
+  } catch (error) {
+    console.error("Error register:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการลงทะเบียน" });
+  }
+});
+
+// 5.2 เข้าสู่ระบบ (Login)
+app.post("/api/auth/login", async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "กรุณากรอก email และ password",
+      });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || user.password !== password) {
+      return res.status(401).json({
+        success: false,
+        message: "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "เข้าสู่ระบบสำเร็จ",
+      data: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        tel: user.tel,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Error login:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
+  }
+});
+
+// 5.3 ดูรายชื่อผู้ใช้ทั้งหมด (สำหรับทดสอบ)
+app.get("/api/users", async (_req: Request, res: Response) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        tel: true,
+        role: true,
+        _count: {
+          select: { reports: true, clues: true },
+        },
+      },
+    });
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
+  }
+});
+
+// เริ่มต้นเปิด Server
+app.listen(PORT, () => {
+  console.log(`Server running at: http://localhost:${PORT}`);
+  console.log(`API Documentation:`);
+  console.log(`   - GET    /api/reports           (ดึงรายการของหาย / ค้นหา)`);
+  console.log(`   - GET    /api/reports/:id       (รายละเอียด + เบาะแส)`);
+  console.log(`   - POST   /api/reports           (แจ้งหายใหม่)`);
+  console.log(`   - PATCH  /api/reports/:id/status (เปลี่ยนสถานะ LOST/FOUND)`);
+  console.log(`   - POST   /api/clues             (ส่งเบาะแส)`);
+  console.log(`   - GET    /api/users/:id/history (ประวัติเบาะแสและโพสต์)`);
+  console.log(`   - POST   /api/auth/register     (สมัครสมาชิก)`);
+  console.log(`   - POST   /api/auth/login        (เข้าสู่ระบบ)`);
+});
