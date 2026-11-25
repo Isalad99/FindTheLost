@@ -390,13 +390,4 @@ app.get("/api/users", async (_req: Request, res: Response) => {
 // เริ่มต้นเปิด Server
 app.listen(PORT, () => {
   console.log(`Server running at: http://localhost:${PORT}`);
-  console.log(`API Documentation:`);
-  console.log(`   - GET    /api/reports           (ดึงรายการของหาย / ค้นหา)`);
-  console.log(`   - GET    /api/reports/:id       (รายละเอียด + เบาะแส)`);
-  console.log(`   - POST   /api/reports           (แจ้งหายใหม่)`);
-  console.log(`   - PATCH  /api/reports/:id/status (เปลี่ยนสถานะ LOST/FOUND)`);
-  console.log(`   - POST   /api/clues             (ส่งเบาะแส)`);
-  console.log(`   - GET    /api/users/:id/history (ประวัติเบาะแสและโพสต์)`);
-  console.log(`   - POST   /api/auth/register     (สมัครสมาชิก)`);
-  console.log(`   - POST   /api/auth/login        (เข้าสู่ระบบ)`);
 });
