@@ -1,24 +1,20 @@
+import { Link } from "react-router";
 import { Search, User } from "lucide-react";
 
-interface NavbarProps {
-  onLogoClick: () => void;
-}
-
-export default function Navbar({ onLogoClick }: NavbarProps) {
+export default function Navbar() {
   return (
     <header className="sticky top-0 z-30 bg-[#fffffe] border-b border-gray-200/80 px-4 md:px-6 py-3">
       {/* 3 คอลัมน์: โลโก้ชิดซ้าย | ช่องค้นหากลางจอ | โปรไฟล์ชิดขวา */}
       <div className="grid grid-cols-[1fr_minmax(0,36rem)_1fr] items-center gap-4">
         {/* โลโก้ / ชื่อเว็บ ทางซ้าย (กดเพื่อกลับหน้า Dashboard) */}
         <h1 className="justify-self-start text-xl font-bold tracking-tight text-[#1a1a1a]">
-          <button
-            type="button"
-            onClick={onLogoClick}
+          <Link
+            to="/"
             title="กลับหน้า Dashboard"
             className="cursor-pointer rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
           >
             FindTheLost
-          </button>
+          </Link>
         </h1>
 
         {/* แถบค้นหาตรงกลาง (UI ตาม Mockup) */}

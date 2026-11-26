@@ -51,3 +51,31 @@ export interface ApiResponse<T> {
   data: T;
   message?: string;
 }
+
+// ผู้ใช้ (ใช้เลือกผู้ส่งเบาะแส จนกว่าจะมีระบบ Login)
+export interface UserOption {
+  id: number;
+  name: string;
+  email: string;
+  role: 'USER' | 'ADMIN';
+}
+
+// ข้อมูลที่ส่งไปแก้ไขรายการแจ้งหาย (PUT /api/reports/:id)
+export interface UpdateReportInput {
+  title: string;
+  category: Category;
+  lostDate: string; // ISO string
+  description: string;
+  lastSeenLocation: string;
+  contactTel: string;
+  imageUrl: string; // ว่างได้
+}
+
+// ข้อมูลที่ส่งไปสร้างเบาะแส (POST /api/clues)
+export interface CreateClueInput {
+  message: string;
+  location: string;
+  imageUrl: string;
+  reportId: number;
+  userId: number;
+}
