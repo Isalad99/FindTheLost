@@ -4,7 +4,11 @@ import HeroBanner from './HeroBanner';
 import ReportSection from './ReportSection';
 import type { LostReport } from '../types';
 
-export default function Dashboard() {
+interface DashboardProps {
+  onSelectReport: (id: number) => void;
+}
+
+export default function Dashboard({ onSelectReport }: DashboardProps) {
   const { data: reports = [], isLoading } = useQuery<LostReport[]>({
     queryKey: ['reports'],
     queryFn: () => getReports(),
@@ -25,18 +29,21 @@ export default function Dashboard() {
         title="คนหาย"
         reports={personReports}
         isLoading={isLoading}
+        onSelectReport={onSelectReport}
       />
 
       <ReportSection
         title="สัตว์หาย"
         reports={petReports}
         isLoading={isLoading}
+        onSelectReport={onSelectReport}
       />
 
       <ReportSection
         title="สิ่งของหาย"
         reports={itemReports}
         isLoading={isLoading}
+        onSelectReport={onSelectReport}
       />
     </div>
   );

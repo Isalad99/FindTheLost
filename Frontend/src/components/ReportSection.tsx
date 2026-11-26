@@ -7,9 +7,10 @@ interface ReportSectionProps {
   title: string;
   reports: LostReport[];
   isLoading?: boolean;
+  onSelectReport: (id: number) => void;
 }
 
-export default function ReportSection({ title, reports, isLoading }: ReportSectionProps) {
+export default function ReportSection({ title, reports, isLoading, onSelectReport }: ReportSectionProps) {
   const [showAll, setShowAll] = useState(false);
 
   // เริ่มต้นแสดง 4 รายการต่อแถว ตามที่กำหนด
@@ -51,7 +52,7 @@ export default function ReportSection({ title, reports, isLoading }: ReportSecti
           {/* ตารางแสดง 4 รายการต่อแถว */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
             {visibleReports.map((report) => (
-              <ReportCard key={report.id} report={report} />
+              <ReportCard key={report.id} report={report} onSelect={onSelectReport} />
             ))}
           </div>
 

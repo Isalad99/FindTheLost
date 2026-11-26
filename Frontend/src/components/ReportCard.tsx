@@ -3,9 +3,10 @@ import type { LostReport } from '../types';
 
 interface ReportCardProps {
   report: LostReport;
+  onSelect: (id: number) => void;
 }
 
-export default function ReportCard({ report }: ReportCardProps) {
+export default function ReportCard({ report, onSelect }: ReportCardProps) {
   const [imgError, setImgError] = useState(false);
 
   // แปลงวันที่ให้อ่านง่าย เช่น 20 พ.ย. 2026
@@ -24,7 +25,7 @@ export default function ReportCard({ report }: ReportCardProps) {
 
   return (
     <div
-      onClick={() => {}}
+      onClick={() => onSelect(report.id)}
       className="bg-[#fffffe] rounded-[24px] border border-black/30 p-2.5 flex flex-col transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer group"
     >
       {/* กล่องรูปภาพด้านบน (ตาม report box.png) */}
